@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<link rel="icon" href="data:,">
+<title>설문 집계기</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; --muted: #888; --warn: #b45309; }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 720px; padding: 16px; font: 16px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  textarea { width: 100%; height: 9rem; font: 14px/1.4 ui-monospace, monospace; padding: 8px; }
+  #notice { color: var(--warn); margin-top: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  th { font-size: 0.85rem; text-align: right; }
+  td { text-align: right; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<h1>설문 집계기</h1>
+<p class="muted">엑셀에서 머리글 줄까지 복사해 붙여넣으세요. 첫 열(응답번호)은 집계하지 않습니다. 데이터는 이 화면 밖으로 나가지 않고 저장되지 않습니다.</p>
+<textarea id="input" aria-label="응답 붙여넣기" placeholder="여기에 붙여넣기" spellcheck="false" autocomplete="off"></textarea>
+<div id="notice" role="status"></div>
+<div id="result"></div>
+<script id="tally-core">
+// 계산 로직: 화면(문서 요소)을 건드리지 않는다. tests/tally.test.mjs가 이 블록만 꺼내 시험한다.
+
+// 한 칸을 'valid' | 'blank' | 'excluded' 로 나눈다 (설계서 3장 ①~③).
+function classify(cell) {
+  const v = cell.trim();
+  if (v === '') return 'blank';
+  if (v === '1' || v === '2' || v === '3' || v === '4' || v === '5') return 'valid';
+  return 'excluded';
+}
+
+// 소수 셋째 자리에서 반올림한 평균 글자. 유효가 0이면 "-".
+function formatMean(sum, valid) {
+  if (valid === 0) return '-';
+  return (Math.round((sum * 100) / valid) / 100).toFixed(2);
+}
+
+// 붙여넣은 글 → { questions: [{ name, valid, blank, excluded, mean }], responseCount, mismatchedLines }
+function tally(text) {
+  const lines = text.split(/\r?\n/);
+  const rows = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== '') rows.push({ lineNo: i + 1, cells: lines[i].split('\t') });
+  }
+  if (rows.length === 0) return { questions: [], responseCount: 0, mismatchedLines: [] };
+
+  const header = rows[0].cells;
+  const questions = header.slice(1).map((name) => ({ name: name.trim(), valid: 0, blank: 0, excluded: 0, sum: 0 }));
+  const mismatchedLines = [];
+
+  for (const row of rows.slice(1)) {
+    if (row.cells.length !== header.length) mismatchedLines.push(row.lineNo);
+    questions.forEach((q, j) => {
+      const cell = row.cells[j + 1] ?? '';
+      const kind = classify(cell);
+      q[kind]++;
+      if (kind === 'valid') q.sum += Number(cell.trim());
+    });
+  }
+
+  return {
+    questions: questions.map(({ name, valid, blank, excluded, sum }) => ({
+      name, valid, blank, excluded, mean: formatMean(sum, valid),
+    })),
+    responseCount: rows.length - 1,
+    mismatchedLines,
+  };
+}
+</script>
+<script>
+// 화면: 계산 로직(tally)의 결과를 표로 그리기만 한다.
+const input = document.getElementById('input');
+const notice = document.getElementById('notice');
+const result = document.getElementById('result');
+
+function cell(tag, text) {
+  const el = document.createElement(tag);
+  el.textContent = text;
+  return el;
+}
+
+function render() {
+  const r = tally(input.value);
+  notice.textContent = r.mismatchedLines.length
+    ? `칸 수가 머리글과 다른 줄: ${r.mismatchedLines.join(', ')}번째 줄 (모자란 칸은 빈 응답으로 세고, 남는 칸은 무시했습니다)`
+    : '';
+  result.replaceChildren();
+  if (r.questions.length === 0) return;
+
+  const table = document.createElement('table');
+  const head = table.createTHead().insertRow();
+  for (const t of ['문항', '유효 응답', '평균', '빈 응답', '제외']) head.append(cell('th', t));
+  const body = table.createTBody();
+  for (const q of r.questions) {
+    const row = body.insertRow();
+    row.append(cell('td', q.name), cell('td', q.valid), cell('td', q.mean), cell('td', q.blank), cell('td', q.excluded));
+  }
+  const total = cell('p', `응답 ${r.responseCount}건`);
+  total.className = 'muted';
+  result.append(total, table);
+}
+
+input.addEventListener('input', render);
+</script>
+</body>
+</html>
