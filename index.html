@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<link rel="icon" href="data:,">
+<title>설문 집계기</title>
+</head>
+<body>
+<script id="tally-core">
+// 계산 로직: 화면(문서 요소)을 건드리지 않는다. tests/tally.test.mjs가 이 블록만 꺼내 시험한다.
+
+// 한 칸을 'valid' | 'blank' | 'excluded' 로 나눈다 (설계서 3장 ①~③).
+function classify(cell) {
+  const v = cell.trim();
+  if (v === '') return 'blank';
+  if (v === '1' || v === '2' || v === '3' || v === '4' || v === '5') return 'valid';
+  return 'excluded';
+}
+
+// 소수 셋째 자리에서 반올림한 평균 글자. 유효가 0이면 "-".
+function formatMean(sum, valid) {
+  if (valid === 0) return '-';
+  return (Math.round((sum * 100) / valid) / 100).toFixed(2);
+}
+
+// 붙여넣은 글 → { questions: [{ name, valid, blank, excluded, mean }], responseCount, mismatchedLines }
+function tally(text) {
+  const lines = text.split(/\r?\n/);
+  const rows = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== '') rows.push({ lineNo: i + 1, cells: lines[i].split('\t') });
+  }
+  if (rows.length === 0) return { questions: [], responseCount: 0, mismatchedLines: [] };
+
+  const header = rows[0].cells;
+  const questions = header.slice(1).map((name) => ({ name: name.trim(), valid: 0, blank: 0, excluded: 0, sum: 0 }));
+  const mismatchedLines = [];
+
+  for (const row of rows.slice(1)) {
+    if (row.cells.length !== header.length) mismatchedLines.push(row.lineNo);
+    questions.forEach((q, j) => {
+      const cell = row.cells[j + 1] ?? '';
+      const kind = classify(cell);
+      q[kind]++;
+      if (kind === 'valid') q.sum += Number(cell.trim());
+    });
+  }
+
+  return {
+    questions: questions.map(({ name, valid, blank, excluded, sum }) => ({
+      name, valid, blank, excluded, mean: formatMean(sum, valid),
+    })),
+    responseCount: rows.length - 1,
+    mismatchedLines,
+  };
+}
+</script>
+</body>
+</html>

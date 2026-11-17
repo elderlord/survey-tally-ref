@@ -9,7 +9,8 @@ const core = html.match(/<script id="tally-core">([\s\S]*?)<\/script>/);
 assert.ok(core, 'index.html에 tally-core 블록이 있어야 한다');
 const ctx = vm.createContext({});
 vm.runInContext(core[1], ctx);
-const { tally } = ctx;
+// vm 안에서 만든 배열은 원형(prototype)이 달라 deepEqual이 실패하므로 일반 값으로 옮긴다.
+const tally = (text) => JSON.parse(JSON.stringify(ctx.tally(text)));
 
 // 응답번호 열 + 문항 1개짜리 붙여넣기 글을 만든다.
 function oneQuestion(values) {
