@@ -3,11 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
 <link rel="icon" href="data:,">
 <title>설문 집계기</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; --muted: #888; --warn: #b45309; }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 720px; padding: 16px; font: 16px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  textarea { width: 100%; height: 9rem; font: 14px/1.4 ui-monospace, monospace; padding: 8px; }
+  #notice { color: var(--warn); margin-top: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  th { font-size: 0.85rem; text-align: right; }
+  td { text-align: right; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; overflow-wrap: anywhere; }
+</style>
 </head>
 <body>
+<h1>설문 집계기</h1>
+<p class="muted">엑셀에서 머리글 줄까지 복사해 붙여넣으세요. 첫 열(응답번호)은 집계하지 않습니다. 데이터는 이 화면 밖으로 나가지 않고 저장되지 않습니다.</p>
+<textarea id="input" aria-label="응답 붙여넣기" placeholder="여기에 붙여넣기" spellcheck="false" autocomplete="off"></textarea>
+<div id="notice" role="status"></div>
+<div id="result"></div>
 <script id="tally-core">
 // 계산 로직: 화면(문서 요소)을 건드리지 않는다. tests/tally.test.mjs가 이 블록만 꺼내 시험한다.
 
@@ -56,6 +76,41 @@ function tally(text) {
     mismatchedLines,
   };
 }
+</script>
+<script>
+// 화면: 계산 로직(tally)의 결과를 표로 그리기만 한다.
+const input = document.getElementById('input');
+const notice = document.getElementById('notice');
+const result = document.getElementById('result');
+
+function cell(tag, text) {
+  const el = document.createElement(tag);
+  el.textContent = text;
+  return el;
+}
+
+function render() {
+  const r = tally(input.value);
+  notice.textContent = r.mismatchedLines.length
+    ? `칸 수가 머리글과 다른 줄: ${r.mismatchedLines.join(', ')}번째 줄 (모자란 칸은 빈 응답으로 세고, 남는 칸은 무시했습니다)`
+    : '';
+  result.replaceChildren();
+  if (r.questions.length === 0) return;
+
+  const table = document.createElement('table');
+  const head = table.createTHead().insertRow();
+  for (const t of ['문항', '유효 응답', '평균', '빈 응답', '제외']) head.append(cell('th', t));
+  const body = table.createTBody();
+  for (const q of r.questions) {
+    const row = body.insertRow();
+    row.append(cell('td', q.name), cell('td', q.valid), cell('td', q.mean), cell('td', q.blank), cell('td', q.excluded));
+  }
+  const total = cell('p', `응답 ${r.responseCount}건`);
+  total.className = 'muted';
+  result.append(total, table);
+}
+
+input.addEventListener('input', render);
 </script>
 </body>
 </html>
